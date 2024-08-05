@@ -1,0 +1,1 @@
+C:\Users\samue\cbvm\rewrite\target\debug\rewrite.exe: C:\Users\samue\cbvm\rewrite\src\engine\engine.rs C:\Users\samue\cbvm\rewrite\src\engine\memory.rs C:\Users\samue\cbvm\rewrite\src\engine\mod.rs C:\Users\samue\cbvm\rewrite\src\main.rs C:\Users\samue\cbvm\rewrite\src\reader\mod.rs C:\Users\samue\cbvm\rewrite\src\structs\mod.rs C:\Users\samue\cbvm\rewrite\src\writer\mod.rs
