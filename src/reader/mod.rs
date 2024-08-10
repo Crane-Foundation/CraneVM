@@ -1,6 +1,6 @@
 //this will read a file in groups of 4 bytes and return a vector of Instruction
 
-use crate::structs::{Instruction, Opcode};
+use crate::structs::Instruction;
 use std::fs::File;
 use std::io::Read;
 

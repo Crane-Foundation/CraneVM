@@ -1,15 +1,15 @@
 use crate::engine::memory;
 
-use crate::structs::Opcode::{self, *};
+use crate::structs::Opcode::{self};
 use memory::Block;
 use memory::Memory;
-use std::f32::consts::E;
 use std::io::Read;
 // Registers are just stored in Memory struct
 
 pub struct Engine {
     path: String,
     pub memory: Memory,
+    pc: u16,
 }
 
 // Constructor
@@ -18,6 +18,7 @@ impl Engine {
         Engine {
             path: path.to_string(),
             memory: Memory::new(),
+            pc: 0,
         }
     }
 }
@@ -43,10 +44,6 @@ impl Engine {
             i += 4;
         }
         //print the program memory block
-        let program = self
-            .memory
-            .read_block(Block::new(memory::PROGRAM_START, 64));
-        println!("{:?}", program);
     }
 }
 
@@ -57,7 +54,7 @@ impl Engine {
     pub const FUNCS: [VmFunction; 38] = [
         Engine::add,
         Engine::sub,         //sub
-        Engine::placeholder, //mul
+        Engine::mul,         //mul
         Engine::placeholder, //div
         Engine::placeholder, //mod
         Engine::placeholder, //and
@@ -94,16 +91,6 @@ impl Engine {
         Engine::placeholder,
         Engine::halt,
     ];
-    //fetch the next instruction
-    //decode the instruction - this just returns a buffer of 4 bytes
-    fn fetch(&mut self) -> [u8; 4] {
-        let pca = memory::PC;
-        let pc = self.memory.read_byte(memory::PC);
-        let instruction = self
-            .memory
-            .read_block(Block::new(pc as usize + memory::PROGRAM_START, 4));
-        unsafe { *(instruction.as_ptr() as *const [u8; 4]) }
-    }
     //decode the instruction - this returns the opcode and operands
     fn decode(&self, instruction: [u8; 4]) -> (Opcode, [u8; 3]) {
         let opcode = Opcode::from_char(instruction[0] as char).unwrap();
@@ -114,30 +101,14 @@ impl Engine {
     fn execute(&mut self, opcode: Opcode, operands: [u8; 3]) {
         //execute a function based on the opcode, passing the operands
         Self::FUNCS[opcode as usize](self, operands);
-        self.memory.inc_pc()
+        self.pc += 4;
     }
-    //run the fetch-decode-execute cycle
-    pub fn run(&mut self) {
-        loop {
-            let instruction = self.fetch();
-            let (opcode, operands) = self.decode(instruction);
-            self.execute(opcode, operands);
-        }
-    }
-
-    fn sizeof_reg(&self, reg: u8) -> usize {
-        if reg < 16 {
-            1
-        } else {
-            2
-        }
-    }
-    fn sizeof_const(&self, constant: u8) -> usize {
-        if constant == 0 {
-            1
-        } else {
-            2
-        }
+    //fetch the next instruction
+    //decode the instruction - this just returns a buffer of 4 bytes
+    fn fetch(&mut self) -> [u8; 4] {
+        let from = memory::PROGRAM_START + self.pc as usize;
+        let instruction = &self.memory.memory[from..from + 4];
+        unsafe { *(instruction.as_ptr() as *const [u8; 4]) }
     }
     fn read_reg(&self, reg: u8) -> u16 {
         if self.sizeof_reg(reg) == 1 {
@@ -145,6 +116,23 @@ impl Engine {
         } else {
             let reg = self.memory.read_block(Block::new(reg as usize, 2));
             Self::bytes_to_u16([reg[0], reg[1]])
+        }
+    }
+
+    //run the fetch-decode-execute cycle
+    #[inline(never)]
+    pub fn run(&mut self) {
+        loop {
+            let instruction = self.fetch();
+            let (opcode, operands) = self.decode(instruction);
+            self.execute(opcode, operands);
+        }
+    }
+    fn sizeof_reg(&self, reg: u8) -> usize {
+        if reg < 16 {
+            1
+        } else {
+            2
         }
     }
 }
@@ -155,55 +143,69 @@ impl Engine {
     fn add(&mut self, operands: [u8; 3]) {
         let reg = operands[0];
         let reg_val = self.read_reg(reg);
-        let data = self.memory.read_block(Block::new(Engine::bytes_to_u16([operands[1], operands[2]]) as usize, 2));
+        let data = self.memory.read_block(Block::new(
+            Engine::bytes_to_u16([operands[1], operands[2]]) as usize,
+            2,
+        ));
         let result = reg_val + Engine::bytes_to_u16([data[0], data[1]]);
         let result_bytes = Engine::u16_to_bytes(result);
-        println!("{} + {} = {}", reg_val, Engine::bytes_to_u16([data[0], data[1]]), result);
-        self.memory.write_block(Block::new(reg as usize, 2), &result_bytes);
+        self.memory
+            .write_block(Block::new(reg as usize, 2), &result_bytes);
     }
 
     //subtract the operands
     fn sub(&mut self, operands: [u8; 3]) {
         let reg = operands[0];
         let reg_val = self.read_reg(reg);
-        let data = self.memory.read_block(Block::new(Engine::bytes_to_u16([operands[1], operands[2]]) as usize, 2));
+        let data = self.memory.read_block(Block::new(
+            Engine::bytes_to_u16([operands[1], operands[2]]) as usize,
+            2,
+        ));
         let result = reg_val.wrapping_sub(Engine::bytes_to_u16([data[0], data[1]]));
         let result_bytes = Engine::u16_to_bytes(result);
-        println!("{} - {} = {}", reg_val, Engine::bytes_to_u16([data[0], data[1]]), result);
-        self.memory.write_block(Block::new(reg as usize, 2), &result_bytes);
+        self.memory
+            .write_block(Block::new(reg as usize, 2), &result_bytes);
+    }
+
+    fn mul(&mut self, operands: [u8; 3]) {
+        let reg_value: u16 = self.read_reg(operands[0]);
+        let data: &[u8] = self.memory.read_block(Block::new(
+            Engine::bytes_to_u16([operands[1], operands[2]]) as usize,
+            2,
+        ));
+        self.memory.write_block(
+            Block::new(operands[0] as usize, 2),
+            &Engine::u16_to_bytes(reg_value.wrapping_mul(Engine::bytes_to_u16([data[0], data[1]]))),
+        )
     }
 
     fn store(&mut self, operands: [u8; 3]) {
-        //take a register that stores 2 bytes and store it in memory
-        let reg = self.memory.read_byte(operands[0] as usize);
-        let address = self.memory.read_block(Block::new(reg as usize, 2));
-        //read data from address and store in memory
-        let data = self.memory.read_block(Block::new(Engine::bytes_to_u16([operands[1], operands[2]]) as usize, 2));
+        // Read memory (operands 2 and 3 are the memory address), store in register (operand 1)
+        let reg = operands[0];
+        let address = Engine::bytes_to_u16([operands[1], operands[2]]) as usize;
+        //use move_within to move the data from the memory to the register (this is a bit of a cheat)
+        self.memory
+            .memory
+            .copy_within(address..address + 2, memory::REG_START + reg as usize);
     }
 
     fn mov(&mut self, operands: [u8; 3]) {
         //move a value into a register
         let reg = operands[0];
-        println!("MOV {} {} {}", reg, operands[1], operands[2]);
-        self.memory.write_block(Block::new(reg as usize, 2), &[operands[1], operands[2]]);
+        self.memory
+            .write_block(Block::new(reg as usize, 2), &[operands[1], operands[2]]);
     }
 
-
-    fn placeholder(&mut self, operands: [u8; 3]) {
+    fn placeholder(&mut self, _operands: [u8; 3]) {
         println!("Test PLACEHOLDER");
     }
 
     //halt the engine
     fn halt(&mut self, operands: [u8; 3]) {
-        println!("Test HALT");
-        //print all registers
-        for i in 0..memory::REG_SIZE {
-            print!("{} ", self.memory.read_byte(memory::REG_START + i));
-        }
+        println!("{:?}", self.memory.read_block(Block::new(16, 64)));
         std::process::exit(operands[2] as i32);
     }
 }
-
 
 // selection of functions to allow easy conversions between u16s and [u8; 2]s
 impl Engine {
@@ -213,6 +215,4 @@ impl Engine {
     fn bytes_to_u16(bytes: [u8; 2]) -> u16 {
         (bytes[0] as u16) << 8 | bytes[1] as u16
     }
-    
 }
-

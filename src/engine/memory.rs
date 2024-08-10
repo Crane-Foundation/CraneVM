@@ -17,7 +17,7 @@ pub const CONSTANTS_16: usize = CONSTANTS_8 + 1; // 256 16-bit constants
 pub const CONSTANTS_END: usize = CONSTANTS_16 + 1 + 255;
 //memory layout
 pub struct Memory {
-    memory: [u8; STACK_SIZE + PROGRAM_SIZE + HEAP_SIZE + DATA_SIZE],
+    pub memory: [u8; STACK_SIZE + PROGRAM_SIZE + HEAP_SIZE + DATA_SIZE],
     pub stack: Block,
     pub program: Block,
     pub heap: Block,
@@ -42,9 +42,6 @@ impl Memory {
     pub fn write_byte(&mut self, address: usize, value: u8) {
         self.memory[address] = value;
     }
-    pub fn inc_pc(&mut self) {
-        self.write_byte(PC, self.read_byte(PC) + 4);
-    }
     //Stack
     pub fn push(&mut self, value: u8) {
         self.stack.size -= 1;
@@ -60,13 +57,15 @@ impl Memory {
         self.push(value);
         old
     }
-
-    //write block of memory
     pub fn write_block(&mut self, block: Block, data: &[u8]) {
-        for (i, &byte) in data.iter().enumerate() {
-            self.write_byte(block.start + i, byte);
-        }
+        self.memory[block.start..block.start + block.size].copy_from_slice(data)
     }
+    //write block of memory
+    // pub fn write_block(&mut self, block: Block, data: &[u8]) {
+    //     for (i, &byte) in data.iter().enumerate() {
+    //         self.write_byte(block.start + i, byte);
+    //     }
+    // }
 
     //read block of memory, do give a slice back, no vectors
     pub fn read_block(&self, block: Block) -> &[u8] {
@@ -97,7 +96,7 @@ pub enum Register {
     Pc,
     // 16 bit
     //Data
-    Er0, 
+    Er0,
     Er1,
     Er2,
     Er3,
@@ -140,5 +139,5 @@ impl Block {
 //page struct, just an intermediary between the memory and files
 pub struct Page {
     pub data: [u8; STACK_SIZE + PROGRAM_SIZE + HEAP_SIZE + DATA_SIZE],
-    program_id: usize,
+    pub program_id: usize,
 }
